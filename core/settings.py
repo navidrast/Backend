@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'appointments.apps.AppointmentsConfig',
     'business_hours.apps.BusinessHoursConfig',
     'holidays.apps.HolidaysConfig',
+    'dashboard.apps.DashboardConfig',
 ]
 
 MIDDLEWARE = [

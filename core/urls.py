@@ -38,6 +38,7 @@ urlpatterns = [
     path('api/appointments/', include('appointments.urls')),
     path('api/business-hours/', include('business_hours.urls')),  # 新增
     path('api/holidays/', include('holidays.urls')),  
+    path('api/admin/dashboard/', include('dashboard.urls')),  # 新增
 ]
 
 # 开发环境下的媒体文件服务
