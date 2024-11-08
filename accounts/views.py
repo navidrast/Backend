@@ -1,5 +1,5 @@
 # accounts/views.py
-
+from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,6 +10,13 @@ from .serializers import (
     CustomerRegistrationSerializer,
     PasswordChangeSerializer
 )
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = CustomerSerializer(request.user)
+        return Response(serializer.data)
 
 Customer = get_user_model()
 

@@ -3,9 +3,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import AppointmentViewSet
+from .views_admin import AdminDashboardViewSet
 
 router = DefaultRouter()
 router.register('appointments', AppointmentViewSet, basename='appointment')
+router.register(r'admin/dashboard', AdminDashboardViewSet, basename='admin-dashboard')
 
 app_name = 'appointments'
 
