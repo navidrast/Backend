@@ -19,10 +19,13 @@ class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     
     def get_permissions(self):
-        """普通用户只能查看，管理员可以进行所有操作"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
-        return [IsAuthenticated()]
+        """
+        - 查看服务：允许所有人访问
+        - 修改服务：仅管理员可操作
+        """
+        if self.action in ['list', 'retrieve']:
+            return []  # 空列表表示允许所有人访问
+        return [IsAdminUser()]  # 其他操作需要管理员权限
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
