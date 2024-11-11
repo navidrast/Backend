@@ -13,10 +13,13 @@ class BusinessHoursViewSet(viewsets.ModelViewSet):
     serializer_class = BusinessHoursSerializer
     
     def get_permissions(self):
-        """仅管理员可以修改营业时间，其他用户可以查看"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
-        return [IsAuthenticated()]
+        """
+        - 查看营业时间：允许所有人访问
+        - 修改营业时间：仅管理员可操作
+        """
+        if self.action in ['list', 'retrieve', 'current_week']:
+            return []  # 空列表表示允许所有人访问
+        return [IsAdminUser()]  # 其他操作需要管理员权限
     
     @action(detail=False, methods=['get'])
     def current_week(self, request):
