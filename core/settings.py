@@ -100,7 +100,10 @@ REST_FRAMEWORK = {
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite 默认开发服务器地址
-    "http://127.0.0.1:5173",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",  # 你的前端开发服务器地址
 ]
 
 CORS_ALLOW_CREDENTIALS = True
