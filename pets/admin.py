@@ -9,9 +9,9 @@ class PetHealthRecordInline(admin.TabularInline):
 
 @admin.register(Pet)
 class PetAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'breed', 'weight', 'size', 
+    list_display = ('name', 'owner', 'breed', 'size', 
                    'gender', 'is_sterilized')
-    list_filter = ('gender', 'is_sterilized')
+    list_filter = ('gender', 'is_sterilized','size')
     search_fields = ('name', 'owner__username', 'breed')
     inlines = [PetHealthRecordInline]
 

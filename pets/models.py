@@ -7,6 +7,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from services.models import DogSize
 import uuid
 
+
 class Pet(models.Model):
     """宠物模型"""
     id = models.UUIDField(
@@ -22,14 +23,11 @@ class Pet(models.Model):
     )
     name = models.CharField(_('宠物名称'), max_length=50)
     breed = models.CharField(_('品种'), max_length=50, blank=True)
-    weight = models.DecimalField(
-        _('体重(kg)'),
-        max_digits=5,
-        decimal_places=2,
-        validators=[
-            MinValueValidator(0.1),
-            MaxValueValidator(100)
-        ]
+    size = models.CharField(
+        _('体型'),
+        max_length=1,
+        choices=DogSize.choices,
+        help_text=_('请选择宠物体型')
     )
     birthday = models.DateField(_('出生日期'), null=True, blank=True)
     gender = models.CharField(
@@ -59,21 +57,6 @@ class Pet(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_size_display()})"
-
-    @property
-    def size(self):
-        """根据体重自动计算体型"""
-        weight = float(self.weight)
-        if weight <= 8:
-            return DogSize.SMALL
-        elif weight <= 15:
-            return DogSize.MEDIUM
-        else:
-            return DogSize.LARGE
-
-    def get_size_display(self):
-        """获取体型显示名称"""
-        return dict(DogSize.choices)[self.size]
 
 class PetHealthRecord(models.Model):
     """宠物健康记录"""
