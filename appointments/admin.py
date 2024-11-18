@@ -1,5 +1,3 @@
-# appointments/admin.py
-
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import Appointment, AppointmentNote
@@ -9,8 +7,8 @@ class AppointmentNoteInline(admin.TabularInline):
     """预约备注内联管理"""
     model = AppointmentNote
     extra = 0
-    readonly_fields = ('staff', 'created_at')
-    fields = ('staff', 'note', 'created_at')
+    readonly_fields = ('user', 'created_at')
+    fields = ('user', 'note', 'note_type', 'created_at')
 
     def has_add_permission(self, request, obj=None):
         return True
@@ -51,7 +49,7 @@ class AppointmentAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
     
     fieldsets = (
-        ('预约信息', {
+        ('Basic Information', {
             'fields': (
                 'customer', 
                 'pet', 
@@ -59,20 +57,20 @@ class AppointmentAdmin(admin.ModelAdmin):
                 'total_price'
             )
         }),
-        ('时间信息', {
+        ('Time Information', {
             'fields': (
                 'date', 
                 'start_time', 
                 'end_time'
             )
         }),
-        ('状态信息', {
+        ('Status Information', {
             'fields': (
                 'status', 
-                'notes'
+                'customer_notes'  # 改为customer_notes
             )
         }),
-        ('系统信息', {
+        ('System Information', {
             'fields': (
                 'created_at', 
                 'updated_at'
@@ -88,7 +86,7 @@ class AppointmentAdmin(admin.ModelAdmin):
             obj.customer.username,
             obj.customer.email
         )
-    customer_info.short_description = '客户信息'
+    customer_info.short_description = 'Customer Info'
 
     def pet_info(self, obj):
         """宠物信息显示"""
@@ -97,16 +95,16 @@ class AppointmentAdmin(admin.ModelAdmin):
             obj.pet.name,
             obj.pet.get_size_display()
         )
-    pet_info.short_description = '宠物信息'
+    pet_info.short_description = 'Pet Info'
 
     def service_info(self, obj):
         """服务信息显示"""
         return format_html(
-            '<div><strong>{}</strong><br/>{}分钟</div>',
+            '<div><strong>{}</strong><br/>{} mins</div>',
             obj.service.name,
             obj.service.duration
         )
-    service_info.short_description = '服务信息'
+    service_info.short_description = 'Service Info'
 
     def appointment_time(self, obj):
         """预约时间显示"""
@@ -116,22 +114,22 @@ class AppointmentAdmin(admin.ModelAdmin):
             obj.start_time.strftime('%H:%M'),
             obj.end_time.strftime('%H:%M')
         )
-    appointment_time.short_description = '预约时间'
+    appointment_time.short_description = 'Appointment Time'
 
     def status_colored(self, obj):
         """状态彩色显示"""
         colors = {
-            AppointmentStatus.PENDING: '#FFA500',    # 橙色
-            AppointmentStatus.CONFIRMED: '#007BFF',   # 蓝色
-            AppointmentStatus.COMPLETED: '#28A745',   # 绿色
-            AppointmentStatus.CANCELLED: '#DC3545'    # 红色
+            AppointmentStatus.PENDING: '#FFA500',    # 橙色 - 待确认
+            AppointmentStatus.CONFIRMED: '#007BFF',   # 蓝色 - 已确认
+            AppointmentStatus.COMPLETED: '#28A745',   # 绿色 - 已完成
+            AppointmentStatus.CANCELLED: '#DC3545'    # 红色 - 已取消
         }
         return format_html(
             '<span style="color: {};">{}</span>',
             colors.get(obj.status, 'black'),
             obj.get_status_display()
         )
-    status_colored.short_description = '状态'
+    status_colored.short_description = 'Status'
 
     def save_model(self, request, obj, form, change):
         """保存模型时的额外操作"""
@@ -145,8 +143,9 @@ class AppointmentAdmin(admin.ModelAdmin):
         instances = formset.save(commit=False)
         for instance in instances:
             if isinstance(instance, AppointmentNote):
-                if not instance.staff_id:
-                    instance.staff = request.user
+                if not instance.user_id:
+                    instance.user = request.user
+                    instance.note_type = 'staff' if request.user.is_staff else 'customer'
             instance.save()
         formset.save_m2m()
 
@@ -155,20 +154,22 @@ class AppointmentNoteAdmin(admin.ModelAdmin):
     """预约备注管理"""
     list_display = (
         'appointment', 
-        'staff', 
+        'user', 
+        'note_type',
         'note', 
         'created_at'
     )
     list_filter = (
-        'staff', 
+        'note_type', 
+        'user', 
         'created_at'
     )
     search_fields = (
         'appointment__customer__username',
-        'staff__username',
+        'user__username',
         'note'
     )
-    readonly_fields = ('created_at',)
+    readonly_fields = ('created_at', 'updated_at')
 
     def has_add_permission(self, request):
         return request.user.is_staff
@@ -176,9 +177,9 @@ class AppointmentNoteAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         if obj is None:
             return True
-        return request.user.is_superuser or obj.staff == request.user
+        return request.user.is_superuser or obj.user == request.user
 
     def has_delete_permission(self, request, obj=None):
         if obj is None:
             return True
-        return request.user.is_superuser or obj.staff == request.user
+        return request.user.is_superuser or obj.user == request.user

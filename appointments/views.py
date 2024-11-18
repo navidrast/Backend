@@ -1,5 +1,3 @@
-# appointments/views.py
-
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -58,6 +56,52 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return AppointmentDetailSerializer
         return AppointmentSerializer
 
+    @action(detail=True, methods=['get'])
+    def notes(self, request, pk=None):
+        """获取预约的备注列表"""
+        appointment = self.get_object()
+        # 验证权限
+        if not request.user.is_staff and appointment.customer != request.user:
+            return Response(
+                {"error": "Can only view notes of your own appointments"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        notes = appointment.notes.all()
+        serializer = AppointmentNoteSerializer(notes, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def add_note(self, request, pk=None):
+        """添加预约备注"""
+        appointment = self.get_object()
+        
+        # 验证权限
+        if not request.user.is_staff and appointment.customer != request.user:
+            return Response(
+                {"error": "Can only add notes to your own appointments"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = AppointmentNoteSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            serializer.save(
+                appointment=appointment,
+                user=request.user
+            )
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     @action(detail=False, methods=['get'])
     def available_slots(self, request):
         """
@@ -73,7 +117,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         # 验证参数
         if not date_str or not service_id:
             return Response(
-                {"error": "必须提供日期和服务ID"},
+                {"error": "Date and service ID are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -84,19 +128,19 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             service = Service.objects.get(id=service_id)
         except ValueError:
             return Response(
-                {"error": "无效的日期格式"},
+                {"error": "Invalid date format"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Service.DoesNotExist:
             return Response(
-                {"error": "服务不存在"},
+                {"error": "Service not found"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
         # 检查日期是否是过去的日期
         if date < timezone.now().date():
             return Response(
-                {"error": "不能选择过去的日期"},
+                {"error": "Cannot select past dates"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -106,27 +150,30 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         # 获取已存在的预约
         existing_appointments = Appointment.objects.filter(
             date=date,
-            status__in=[
-                AppointmentStatus.PENDING,
-                AppointmentStatus.CONFIRMED
-            ]
+            status__in=[AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]
         )
         
         # 从可用时间段中移除已被预约的时间
         filtered_slots = []
         for slot in available_slots:
             is_available = True
-            slot_start = datetime.combine(date, slot['start_time'])
-            slot_end = datetime.combine(date, slot['end_time'])
+            slot_start = timezone.make_aware(
+                datetime.combine(date, slot['start_time']),
+                timezone.get_current_timezone()
+            )
+            slot_end = timezone.make_aware(
+                datetime.combine(date, slot['end_time']),
+                timezone.get_current_timezone()
+            )
             
             for appointment in existing_appointments:
-                appt_start = datetime.combine(
-                    date, 
-                    appointment.start_time
+                appt_start = timezone.make_aware(
+                    datetime.combine(date, appointment.start_time),
+                    timezone.get_current_timezone()
                 )
-                appt_end = datetime.combine(
-                    date, 
-                    appointment.end_time
+                appt_end = timezone.make_aware(
+                    datetime.combine(date, appointment.end_time),
+                    timezone.get_current_timezone()
                 )
                 
                 # 检查是否有重叠
@@ -151,55 +198,78 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment = self.get_object()
         
         # 检查是否可以取消
-        if appointment.status not in [
-            AppointmentStatus.PENDING,
-            AppointmentStatus.CONFIRMED
-        ]:
+        can_cancel, message = appointment.can_cancel(request.user)
+        if not can_cancel:
             return Response(
-                {"error": "该预约状态无法取消"},
+                {"error": message},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # 检查是否有权限取消
-        if not request.user.is_staff and appointment.customer != request.user:
-            return Response(
-                {"error": "没有权限取消此预约"},
-                status=status.HTTP_403_FORBIDDEN
+        # 检查是否在预约时间24小时内
+        if appointment.is_cancellation_within_24h():
+            # 添加取消备注
+            note_content = "Customer cancelled within 24 hours"
+            if request.user.is_staff:
+                note_content = "Staff cancelled within 24 hours"
+                
+            AppointmentNote.objects.create(
+                appointment=appointment,
+                user=request.user,
+                note=f"{note_content} - Cancellation time: {timezone.now()}",
+                note_type='staff' if request.user.is_staff else 'customer'
             )
             
         # 取消预约
         appointment.status = AppointmentStatus.CANCELLED
         appointment.save()
         
-        return Response({
-            "message": "预约已成功取消",
-            "appointment_id": appointment.id
-        })
+        # 准备响应数据
+        response_data = {
+            "message": "Appointment cancelled successfully",
+            "appointment_id": appointment.id,
+            "cancellation_time": timezone.now(),
+            "warning": None
+        }
+        
+        # 如果是24小时内取消，添加警告信息
+        if appointment.is_cancellation_within_24h():
+            response_data["warning"] = (
+                "Appointment cancelled within 24 hours of scheduled time. "
+                "This may affect your booking credit score."
+            )
+        
+        return Response(response_data)
 
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
         """确认预约（仅限管理员）"""
         if not request.user.is_staff:
             return Response(
-                {"error": "只有工作人员能确认预约"},
+                {"error": "Only staff can confirm appointments"},
                 status=status.HTTP_403_FORBIDDEN
             )
             
         appointment = self.get_object()
         
-        # 检查预约状态
         if appointment.status != AppointmentStatus.PENDING:
             return Response(
-                {"error": "只能确认待确认状态的预约"},
+                {"error": "Can only confirm pending appointments"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # 确认预约
         appointment.status = AppointmentStatus.CONFIRMED
         appointment.save()
+
+        # 添加确认备注
+        AppointmentNote.objects.create(
+            appointment=appointment,
+            user=request.user,
+            note=f"Appointment confirmed by staff at {timezone.now()}",
+            note_type='staff'
+        )
         
         return Response({
-            "message": "预约已确认",
+            "message": "Appointment confirmed",
             "appointment_id": appointment.id
         })
 
@@ -208,50 +278,30 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         """完成预约（仅限管理员）"""
         if not request.user.is_staff:
             return Response(
-                {"error": "只有工作人员能完成预约"},
+                {"error": "Only staff can complete appointments"},
                 status=status.HTTP_403_FORBIDDEN
             )
             
         appointment = self.get_object()
         
-        # 检查预约状态
         if appointment.status != AppointmentStatus.CONFIRMED:
             return Response(
-                {"error": "只能完成已确认状态的预约"},
+                {"error": "Can only complete confirmed appointments"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # 完成预约
         appointment.status = AppointmentStatus.COMPLETED
         appointment.save()
+
+        # 添加完成备注
+        AppointmentNote.objects.create(
+            appointment=appointment,
+            user=request.user,
+            note=f"Appointment completed by staff at {timezone.now()}",
+            note_type='staff'
+        )
         
         return Response({
-            "message": "预约已完成",
+            "message": "Appointment completed",
             "appointment_id": appointment.id
         })
-
-    @action(detail=True, methods=['post'])
-    def add_note(self, request, pk=None):
-        """添加预约备注（仅限管理员）"""
-        if not request.user.is_staff:
-            return Response(
-                {"error": "只有工作人员能添加备注"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-            
-        appointment = self.get_object()
-        serializer = AppointmentNoteSerializer(data=request.data)
-        
-        if serializer.is_valid():
-            serializer.save(
-                appointment=appointment,
-                staff=request.user
-            )
-            return Response(
-                serializer.data,
-                status=status.HTTP_201_CREATED
-            )
-        return Response(
-            serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
-        )
