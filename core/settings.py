@@ -135,7 +135,7 @@ CORS_ALLOW_HEADERS = [
 
 # Internationalization
 LANGUAGE_CODE = os.getenv('LANGUAGE_CODE', 'zh-hans')
-TIME_ZONE = os.getenv('TIME_ZONE', 'Asia/Shanghai')
+TIME_ZONE = os.getenv('TIME_ZONE', 'Sydney/Australia')
 USE_I18N = True
 USE_TZ = True
 

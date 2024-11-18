@@ -1,5 +1,3 @@
-# appointments/utils.py
-
 from datetime import datetime, timedelta
 from django.utils import timezone
 from business_hours.models import BusinessHours
@@ -38,8 +36,15 @@ def get_available_time_slots(date, service_duration):
     
     # 生成时间段
     slots = []
-    current_time = datetime.combine(date, business_hours.start_time)
-    end_time = datetime.combine(date, business_hours.end_time)
+    # 使用timezone.make_aware确保datetime对象是时区感知的
+    current_time = timezone.make_aware(
+        datetime.combine(date, business_hours.start_time),
+        timezone.get_current_timezone()
+    )
+    end_time = timezone.make_aware(
+        datetime.combine(date, business_hours.end_time),
+        timezone.get_current_timezone()
+    )
     
     while current_time + timedelta(minutes=service_duration) <= end_time:
         slots.append({
@@ -52,9 +57,14 @@ def get_available_time_slots(date, service_duration):
 
 def is_valid_appointment_time(date, start_time, service_duration):
     """验证预约时间是否有效"""
-    # 检查是否是过去的时间
+    # 确保使用时区感知的datetime进行比较
     now = timezone.now()
-    appointment_datetime = datetime.combine(date, start_time)
+    appointment_datetime = timezone.make_aware(
+        datetime.combine(date, start_time),
+        timezone.get_current_timezone()
+    )
+    
+    # 检查是否是过去的时间
     if appointment_datetime < now:
         return False, "不能预约过去的时间"
     
@@ -71,10 +81,12 @@ def is_valid_appointment_time(date, start_time, service_duration):
         business_hours = BusinessHours.objects.get(weekday=weekday)
         if not business_hours.is_open:
             return False, "该日期不营业"
-            
-        end_time = (datetime.combine(date, start_time) + 
-                   timedelta(minutes=service_duration)).time()
         
+        # 计算服务结束时间
+        end_datetime = appointment_datetime + timedelta(minutes=service_duration)
+        end_time = end_datetime.time()
+        
+        # 检查是否在营业时间范围内
         if (start_time < business_hours.start_time or 
             end_time > business_hours.end_time):
             return False, "预约时间超出营业时间范围"
